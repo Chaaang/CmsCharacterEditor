@@ -26,14 +26,14 @@ class _EditorPageState extends State<EditorPage> {
   String? _selectedSticker; // Track selected sticker for placement
   Sticker? _selectedPlacedSticker; // Track selected placed sticker for editing
   double _stickerSize = 1.0; // Default sticker size (1.0 = normal size)
-  
+
   // Undo history
   final List<_DesignSnapshot> _history = [];
   static const int _maxHistorySize = 50;
-  
+
   // Global key for capturing the canvas
   final GlobalKey _canvasKey = GlobalKey();
-  
+
   // Upload state
   bool _isUploading = false;
 
@@ -52,13 +52,26 @@ class _EditorPageState extends State<EditorPage> {
     '🍬',
   ];
 
+  final List<Color> _colors = [
+    Colors.black,
+    Color(0xFF724236),
+    Color(0xFF548F46),
+    Color(0xFF4442FB),
+    Color(0xFFEA7600),
+    Color(0xFFFF2A08),
+    Color(0xFF8850C7),
+  ];
+
   void _startDraw(Offset p) {
     if (_tool == ToolType.brush || _tool == ToolType.eraser) {
       _saveToHistory(); // Save state before starting new stroke
       setState(() {
         _currentStroke = DrawStroke(
           points: [p],
-          color: _tool == ToolType.eraser ? Colors.transparent.value : _color.value,
+          color:
+              _tool == ToolType.eraser
+                  ? Colors.transparent.value
+                  : _color.value,
           strokeWidth: _stroke,
           isEraser: _tool == ToolType.eraser,
         );
@@ -90,7 +103,7 @@ class _EditorPageState extends State<EditorPage> {
       _tool = ToolType.move; // Switch to move tool when sticker is selected
     });
   }
-  
+
   void _selectPlacedSticker(Sticker sticker) {
     setState(() {
       _selectedPlacedSticker = sticker;
@@ -98,71 +111,73 @@ class _EditorPageState extends State<EditorPage> {
       _tool = ToolType.move; // Ensure move tool is active
     });
   }
-  
-  
+
   void _handleFill(Offset position) {
     // Fill is handled by CharacterCanvas
     // History is saved via onBeforeFill callback
   }
-  
+
   void _clearCanvas() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Clear Canvas'),
-        content: const Text('Are you sure you want to clear all drawings and stickers? This cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              setState(() {
-                widget.design.strokes.clear();
-                widget.design.stickers.clear();
-              });
-              Navigator.pop(context);
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.red,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Clear Canvas'),
+            content: const Text(
+              'Are you sure you want to clear all drawings and stickers? This cannot be undone.',
             ),
-            child: const Text('Clear'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  setState(() {
+                    widget.design.strokes.clear();
+                    widget.design.stickers.clear();
+                  });
+                  Navigator.pop(context);
+                },
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Clear'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
 
-    void _backToPhotoPage() {
+  void _backToPhotoPage() {
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Exit Editor'),
-        content: const Text('Are you sure you want to exit Editor and go back to Photo Page? This will clear all drawings and stickers.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () {
-              setState(() {
-                widget.design.strokes.clear();
-                widget.design.stickers.clear();
-              });
-              Navigator.pop(context);
-              Navigator.pop(context);
-            },
-            style: FilledButton.styleFrom(
-              backgroundColor: Colors.red,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Exit Editor'),
+            content: const Text(
+              'Are you sure you want to exit Editor and go back to Photo Page? This will clear all drawings and stickers.',
             ),
-            child: const Text('Exit'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  setState(() {
+                    widget.design.strokes.clear();
+                    widget.design.stickers.clear();
+                  });
+                  Navigator.pop(context);
+                  Navigator.pop(context);
+                },
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Exit'),
+              ),
+            ],
           ),
-        ],
-      ),
     );
   }
+
   void _placeStickerAt(Offset position) {
     if (_selectedSticker != null) {
       _saveToHistory(); // Save state before placing sticker
@@ -175,13 +190,13 @@ class _EditorPageState extends State<EditorPage> {
           ),
           textDirection: TextDirection.ltr,
         )..layout();
-        
+
         // Adjust position to center the sticker on the tap point
         final adjustedPosition = Offset(
           position.dx - textPainter.width / 2,
           position.dy - textPainter.height / 2,
         );
-        
+
         widget.design.stickers.add(
           Sticker(
             label: _selectedSticker!,
@@ -199,35 +214,45 @@ class _EditorPageState extends State<EditorPage> {
   void _saveToHistory() {
     // Create a snapshot of current strokes and stickers
     final snapshot = _DesignSnapshot(
-      strokes: widget.design.strokes.map((s) => DrawStroke(
-        points: List.from(s.points),
-        color: s.color,
-        strokeWidth: s.strokeWidth,
-        isEraser: s.isEraser,
-      )).toList(),
-      stickers: widget.design.stickers.map((s) => Sticker(
-        label: s.label,
-        position: s.position,
-        scale: s.scale,
-        rotation: s.rotation,
-      )).toList(),
+      strokes:
+          widget.design.strokes
+              .map(
+                (s) => DrawStroke(
+                  points: List.from(s.points),
+                  color: s.color,
+                  strokeWidth: s.strokeWidth,
+                  isEraser: s.isEraser,
+                ),
+              )
+              .toList(),
+      stickers:
+          widget.design.stickers
+              .map(
+                (s) => Sticker(
+                  label: s.label,
+                  position: s.position,
+                  scale: s.scale,
+                  rotation: s.rotation,
+                ),
+              )
+              .toList(),
     );
-    
+
     _history.add(snapshot);
     if (_history.length > _maxHistorySize) {
       _history.removeAt(0); // Remove oldest
     }
   }
-  
+
   // Undo last action
   void _undo() {
     if (_history.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nothing to undo')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Nothing to undo')));
       return;
     }
-    
+
     setState(() {
       final snapshot = _history.removeLast();
       widget.design.strokes.clear();
@@ -236,53 +261,85 @@ class _EditorPageState extends State<EditorPage> {
       widget.design.stickers.addAll(snapshot.stickers);
     });
   }
-  
+
   // Upload/Save the canvas as image
   Future<void> _uploadCanvas() async {
+    // Show confirmation dialog first
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Confirm Upload'),
+            content: const Text(
+              'Are you sure? Once uploaded, no further changes can be made.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Continue'),
+              ),
+            ],
+          ),
+    );
+
+    if (confirmed != true) {
+      return; // User cancelled
+    }
+
+    // Proceed with upload
+    await _performUpload();
+  }
+
+  Future<void> _performUpload() async {
     if (_isUploading) return; // Prevent multiple simultaneous uploads
-    
+
     setState(() {
       _isUploading = true;
     });
-    
+
     // Show loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => PopScope(
-        canPop: false, // Prevent dismissing during upload
-        child: AlertDialog(
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 20),
-              const Text(
-                'Uploading your design...',
-                style: TextStyle(fontSize: 16),
+      builder:
+          (context) => PopScope(
+            canPop: false, // Prevent dismissing during upload
+            child: AlertDialog(
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Uploading your design...',
+                    style: TextStyle(fontSize: 16),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
-        ),
-      ),
     );
-    
+
     try {
       final renderObject = _canvasKey.currentContext?.findRenderObject();
       if (renderObject == null || !renderObject.attached) {
         if (mounted) {
           Navigator.pop(context); // Close loading dialog
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Canvas not ready')),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Canvas not ready')));
         }
         return;
       }
-      
+
       final renderRepaintBoundary = renderObject as RenderRepaintBoundary;
       final image = await renderRepaintBoundary.toImage(pixelRatio: 2.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-      
+
       if (byteData == null) {
         if (mounted) {
           Navigator.pop(context); // Close loading dialog
@@ -293,17 +350,17 @@ class _EditorPageState extends State<EditorPage> {
         return;
       }
 
-      final url = await Api.saveDesign(widget.design, byteData.buffer.asUint8List());
-      
+      final url = await Api.saveDesign(
+        widget.design,
+        byteData.buffer.asUint8List(),
+      );
+
       if (mounted) {
         Navigator.pop(context); // Close loading dialog
-        
+
         if (url != null && url.isNotEmpty) {
           // Navigate to QR page with the URL
-          Navigator.of(context).pushNamed(
-            QRPage.routeName,
-            arguments: url,
-          );
+          Navigator.of(context).pushNamed(QRPage.routeName, arguments: url);
         } else {
           // If no URL returned, show error
           ScaffoldMessenger.of(context).showSnackBar(
@@ -338,7 +395,7 @@ class _EditorPageState extends State<EditorPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-            backgroundColor: const Color(0xFF5522A3),
+      backgroundColor: const Color(0xFF5522A3),
       appBar: AppBar(
         leading: GestureDetector(
           onTap: () {
@@ -347,7 +404,19 @@ class _EditorPageState extends State<EditorPage> {
           child: const Icon(Icons.arrow_back),
         ),
         backgroundColor: const Color(0xFF5522A3),
-        title: GradientHeader(text: widget.design.characterName, fontSize: 24,),//Text(${widget.design.characterName}'),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            GradientHeader(text: widget.design.characterName, fontSize: 24),
+            IconButton(
+              icon: const Icon(Icons.upload),
+              tooltip: 'Undo',
+              onPressed: _uploadCanvas,
+              color: Colors.white,
+            ),
+          ],
+        ),
+        //Text(${widget.design.characterName}'),
         centerTitle: true,
         actions: [
           IconButton(
@@ -401,6 +470,10 @@ class _EditorPageState extends State<EditorPage> {
             stroke: _stroke,
             onToolChanged: (t) => setState(() => _tool = t),
             onStrokeChanged: (v) => setState(() => _stroke = v),
+            onUndo: _undo,
+            canUndo: _history.isNotEmpty,
+            colors: _colors,
+            onColorChanged: (c) => setState(() => _color = c),
           ),
           Expanded(
             child: Padding(
@@ -411,7 +484,7 @@ class _EditorPageState extends State<EditorPage> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.black12),
                 ),
-                  child: RepaintBoundary(
+                child: RepaintBoundary(
                   key: _canvasKey,
                   child: CharacterCanvas(
                     design: widget.design,
@@ -419,13 +492,17 @@ class _EditorPageState extends State<EditorPage> {
                     onPanUpdate: _updateDraw,
                     onPanEnd: _endDraw,
                     faceDraggable: false, // Don't show face image for now
-                    onTap: _selectedSticker != null 
-                        ? _placeStickerAt 
-                        : (_tool == ToolType.fill ? _handleFill : null),
+                    onTap:
+                        _selectedSticker != null
+                            ? _placeStickerAt
+                            : (_tool == ToolType.fill ? _handleFill : null),
                     fillColor: _tool == ToolType.fill ? _color : null,
-                    onBeforeFill: _tool == ToolType.fill ? _saveToHistory : null,
-                    onAfterFill: _tool == ToolType.fill ? () => setState(() {}) : null,
-                    onStickerTap: _tool == ToolType.move ? _selectPlacedSticker : null,
+                    onBeforeFill:
+                        _tool == ToolType.fill ? _saveToHistory : null,
+                    onAfterFill:
+                        _tool == ToolType.fill ? () => setState(() {}) : null,
+                    onStickerTap:
+                        _tool == ToolType.move ? _selectPlacedSticker : null,
                     onTapPart: (partKey) {
                       // Part tapping for other tools
                     },
@@ -434,45 +511,10 @@ class _EditorPageState extends State<EditorPage> {
               ),
             ),
           ),
-          // UNDO and UPLOAD buttons
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: _history.isEmpty ? null : _undo,
-                  icon: const Icon(Icons.undo),
-                  label: const Text('Undo'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                ElevatedButton.icon(
-                  onPressed: _isUploading ? null : _uploadCanvas,
-                  icon: _isUploading
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                          ),
-                        )
-                      : const Icon(Icons.upload),
-                  label: Text(_isUploading ? 'Uploading...' : 'Upload'),
-                  style: ElevatedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Sticker Size Selector
+
+          //Stroke Size and Sticker Size Selectors
           Container(
-            
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
             decoration: BoxDecoration(
               color: Colors.grey.shade50,
               border: Border(
@@ -480,56 +522,124 @@ class _EditorPageState extends State<EditorPage> {
                 bottom: BorderSide(color: Colors.grey.shade300),
               ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Sticker Size',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
+                // Stroke Size Selector
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Stroke Size',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            _stroke.toStringAsFixed(0),
+                            style: TextStyle(
+                              fontSize: 25,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.purple,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    Text(
-                      _stickerSize.toStringAsFixed(1),
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.purple,
+                      Row(
+                        children: [
+                          const Text(
+                            'Small',
+                            style: TextStyle(fontSize: 21, color: Colors.grey),
+                          ),
+                          Expanded(
+                            child: Slider(
+                              value: _stroke,
+                              min: 1.0,
+                              max: 24.0,
+                              divisions: 23,
+                              activeColor: Colors.purple,
+                              inactiveColor: Colors.pink.shade200,
+                              onChanged: (value) {
+                                setState(() {
+                                  _stroke = value;
+                                });
+                              },
+                            ),
+                          ),
+                          const Text(
+                            'Large',
+                            style: TextStyle(fontSize: 21, color: Colors.grey),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Text(
-                      'Small',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
-                    Expanded(
-                      child: Slider(
-                        value: _stickerSize,
-                        min: 0.5,
-                        max: 2.0,
-                        divisions: 25,
-                        activeColor: Colors.purple,
-                        inactiveColor: Colors.pink.shade200,
-                        onChanged: (value) {
-                          setState(() {
-                            _stickerSize = value;
-                          });
-                        },
+                // Vertical divider
+                Container(
+                  width: 1,
+                  height: 60,
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  color: Colors.grey.shade300,
+                ),
+                // Sticker Size Selector
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            'Sticker Size',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            _stickerSize.toStringAsFixed(0),
+                            style: TextStyle(
+                              fontSize: 25,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.purple,
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    const Text(
-                      'Large',
-                      style: TextStyle(fontSize: 12, color: Colors.grey),
-                    ),
-                  ],
+                      Row(
+                        children: [
+                          const Text(
+                            'Small',
+                            style: TextStyle(fontSize: 21, color: Colors.grey),
+                          ),
+                          Expanded(
+                            child: Slider(
+                              value: _stickerSize,
+                              min: 0.5,
+                              max: 3.0,
+                              divisions: 25,
+                              activeColor: Colors.purple,
+                              inactiveColor: Colors.pink.shade200,
+                              onChanged: (value) {
+                                setState(() {
+                                  _stickerSize = value;
+                                });
+                              },
+                            ),
+                          ),
+                          const Text(
+                            'Large',
+                            style: TextStyle(fontSize: 21, color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -548,13 +658,15 @@ class _EditorPageState extends State<EditorPage> {
                     height: 64,
                     alignment: Alignment.center,
                     decoration: BoxDecoration(
-                      color: _selectedSticker == s 
-                          ? Colors.blue.shade200 
-                          : Colors.grey.shade200,
+                      color:
+                          _selectedSticker == s
+                              ? Colors.blue.shade200
+                              : Colors.grey.shade200,
                       borderRadius: BorderRadius.circular(8),
-                      border: _selectedSticker == s
-                          ? Border.all(color: Colors.blue, width: 2)
-                          : null,
+                      border:
+                          _selectedSticker == s
+                              ? Border.all(color: Colors.blue, width: 2)
+                              : null,
                     ),
                     child: Text(s, style: const TextStyle(fontSize: 32)),
                   ),
@@ -573,11 +685,8 @@ class _EditorPageState extends State<EditorPage> {
 
 // Helper class to store design snapshots for undo
 class _DesignSnapshot {
-  _DesignSnapshot({
-    required this.strokes,
-    required this.stickers,
-  });
-  
+  _DesignSnapshot({required this.strokes, required this.stickers});
+
   final List<DrawStroke> strokes;
   final List<Sticker> stickers;
 }
@@ -589,6 +698,10 @@ class _ToolBar extends StatelessWidget {
     required this.stroke,
     required this.onToolChanged,
     required this.onStrokeChanged,
+    required this.onUndo,
+    required this.canUndo,
+    required this.colors,
+    required this.onColorChanged,
   });
 
   final ToolType tool;
@@ -596,6 +709,10 @@ class _ToolBar extends StatelessWidget {
   final double stroke;
   final ValueChanged<ToolType> onToolChanged;
   final ValueChanged<double> onStrokeChanged;
+  final VoidCallback onUndo;
+  final bool canUndo;
+  final List<Color> colors;
+  final ValueChanged<Color> onColorChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -616,78 +733,72 @@ class _ToolBar extends StatelessWidget {
             tooltip: 'Fill',
             onTap: () => onToolChanged(ToolType.fill),
           ),
-          // const SizedBox(width: 8),
-          // _ToolButton(
-          //   icon: Icons.auto_fix_off,
-          //   selected: tool == ToolType.eraser,
-          //   tooltip: 'Eraser',
-          //   onTap: () => onToolChanged(ToolType.eraser),
-          // ),
-          const Spacer(),
-          // Stroke Size Selector in Toolbar
-          Container(
-            width: 200,
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Text(
-                      'Stroke Size',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      stroke.toStringAsFixed(0),
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.purple,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Text(
-                      'Small',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                    Expanded(
-                      child: Slider(
-                        value: stroke,
-                        min: 1.0,
-                        max: 24.0,
-                        divisions: 23,
-                        activeColor: Colors.purple,
-                        inactiveColor: Colors.pink.shade200,
-                        onChanged: onStrokeChanged,
-                      ),
-                    ),
-                    const Text(
-                      'Large',
-                      style: TextStyle(fontSize: 16, color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
           const SizedBox(width: 8),
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: color,
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.black12),
+          Tooltip(
+            message: 'Undo',
+            child: InkResponse(
+              onTap: canUndo ? onUndo : null,
+              radius: 24,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.black12),
+                ),
+                child: Icon(
+                  size: 40,
+                  Icons.undo,
+                  color: canUndo ? Colors.white : Colors.grey,
+                ),
+              ),
             ),
           ),
+          const Spacer(),
+          // Color Palette
+          Row(
+            children:
+                colors.map((c) {
+                  final isSelected = color.value == c.value;
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: GestureDetector(
+                      onTap: () => onColorChanged(c),
+                      child: Container(
+                        width: 32,
+                        height: 32,
+                        decoration: BoxDecoration(
+                          color: c,
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: isSelected ? Colors.white : Colors.black26,
+                            width: isSelected ? 3 : 1,
+                          ),
+                          boxShadow:
+                              isSelected
+                                  ? [
+                                    BoxShadow(
+                                      color: Colors.white.withOpacity(0.5),
+                                      blurRadius: 4,
+                                      spreadRadius: 1,
+                                    ),
+                                  ]
+                                  : null,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+          ),
+          //const Spacer(),
+          // Container(
+          //   width: 28,
+          //   height: 28,
+          //   decoration: BoxDecoration(
+          //     color: color,
+          //     shape: BoxShape.circle,
+          //     border: Border.all(color: Colors.black12),
+          //   ),
+          // ),
         ],
       ),
     );
@@ -716,17 +827,14 @@ class _ToolButton extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: selected ? Theme.of(context).colorScheme.primary.withOpacity(0.12) : null,
+            color:
+                selected
+                    ? Theme.of(context).colorScheme.primary.withOpacity(0.12)
+                    : null,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: selected ? Colors.white : Colors.black12,
-            ),
+            border: Border.all(color: selected ? Colors.white : Colors.black12),
           ),
-          child: Icon(
-            size: 40,
-            icon,
-            color: selected ? Colors.white : null,
-          ),
+          child: Icon(size: 40, icon, color: selected ? Colors.white : null),
         ),
       ),
     );
