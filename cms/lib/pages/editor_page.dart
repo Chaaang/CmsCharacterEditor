@@ -425,11 +425,21 @@ class _EditorPageState extends State<EditorPage> {
             onPressed: _clearCanvas,
             color: Colors.white,
           ),
-          IconButton(
-            icon: const Icon(Icons.color_lens),
-            tooltip: 'Pick Color',
-            color: Colors.white,
-            onPressed: () async {
+        ],
+      ),
+      body: Column(
+        children: [
+          _ToolBar(
+            tool: _tool,
+            color: _color,
+            stroke: _stroke,
+            onToolChanged: (t) => setState(() => _tool = t),
+            onStrokeChanged: (v) => setState(() => _stroke = v),
+            onUndo: _undo,
+            canUndo: _history.isNotEmpty,
+            colors: _colors,
+            onColorChanged: (c) => setState(() => _color = c),
+            onColorPickerTap: () async {
               final picked = await showDialog<Color>(
                 context: context,
                 builder: (context) {
@@ -459,21 +469,6 @@ class _EditorPageState extends State<EditorPage> {
                 setState(() => _color = picked);
               }
             },
-          ),
-        ],
-      ),
-      body: Column(
-        children: [
-          _ToolBar(
-            tool: _tool,
-            color: _color,
-            stroke: _stroke,
-            onToolChanged: (t) => setState(() => _tool = t),
-            onStrokeChanged: (v) => setState(() => _stroke = v),
-            onUndo: _undo,
-            canUndo: _history.isNotEmpty,
-            colors: _colors,
-            onColorChanged: (c) => setState(() => _color = c),
           ),
           Expanded(
             child: Padding(
@@ -533,7 +528,7 @@ class _EditorPageState extends State<EditorPage> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           const Text(
-                            'Stroke Size',
+                            'Brush Size',
                             style: TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.w600,
@@ -702,6 +697,7 @@ class _ToolBar extends StatelessWidget {
     required this.canUndo,
     required this.colors,
     required this.onColorChanged,
+    required this.onColorPickerTap,
   });
 
   final ToolType tool;
@@ -713,6 +709,7 @@ class _ToolBar extends StatelessWidget {
   final bool canUndo;
   final List<Color> colors;
   final ValueChanged<Color> onColorChanged;
+  final VoidCallback onColorPickerTap;
 
   @override
   Widget build(BuildContext context) {
@@ -754,6 +751,27 @@ class _ToolBar extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          // Color Picker Button
+          Tooltip(
+            message: 'Pick Color',
+            child: InkResponse(
+              onTap: onColorPickerTap,
+              radius: 24,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.black12),
+                ),
+                child: const Icon(
+                  size: 40,
+                  Icons.color_lens,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+          SizedBox(width: 8),
           // Color Palette
           Row(
             children:
@@ -789,16 +807,6 @@ class _ToolBar extends StatelessWidget {
                   );
                 }).toList(),
           ),
-          //const Spacer(),
-          // Container(
-          //   width: 28,
-          //   height: 28,
-          //   decoration: BoxDecoration(
-          //     color: color,
-          //     shape: BoxShape.circle,
-          //     border: Border.all(color: Colors.black12),
-          //   ),
-          // ),
         ],
       ),
     );

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'pages/name_page.dart';
 import 'pages/character_select_page.dart';
 import 'pages/photo_page.dart';
@@ -6,7 +7,9 @@ import 'pages/editor_page.dart';
 import 'pages/qr_page.dart';
 import 'state/models.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
   runApp(const MyApp());
 }
 
@@ -30,19 +33,13 @@ class MyApp extends StatelessWidget {
             );
           case PhotoPage.routeName:
             final args = settings.arguments as CharacterDesign;
-            return MaterialPageRoute(
-              builder: (_) => PhotoPage(design: args),
-            );
+            return MaterialPageRoute(builder: (_) => PhotoPage(design: args));
           case EditorPage.routeName:
             final args = settings.arguments as CharacterDesign;
-            return MaterialPageRoute(
-              builder: (_) => EditorPage(design: args),
-            );
+            return MaterialPageRoute(builder: (_) => EditorPage(design: args));
           case QRPage.routeName:
             final url = settings.arguments as String;
-            return MaterialPageRoute(
-              builder: (_) => QRPage(url: url),
-            );
+            return MaterialPageRoute(builder: (_) => QRPage(url: url));
           case '/':
           default:
             return MaterialPageRoute(builder: (_) => const NamePage());
