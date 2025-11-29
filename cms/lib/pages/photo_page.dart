@@ -171,15 +171,20 @@ class _PhotoPageState extends State<PhotoPage> {
       // Use a fixed minimum size or a percentage, whichever is bigger
       // Made smaller as requested
       final minPixelSize =
-          350.0; // Minimum 350 pixels for a face to fit (was 420)
+          300.0; // Minimum 300 pixels for a face to fit (reduced from 350)
       final percentageSize =
-          smallerDimension * 0.70; // 70% of smaller dimension (was 0.85)
+          smallerDimension *
+          0.60; // 60% of smaller dimension (reduced from 0.70)
       final targetSize =
           minPixelSize > percentageSize ? minPixelSize : percentageSize;
 
       // But don't exceed the screen size
-      final maxSize = smallerDimension * 0.80; // 80% max (was 0.90)
-      final finalTargetSize = targetSize > maxSize ? maxSize : targetSize;
+      final maxSize = smallerDimension * 0.70; // 70% max (reduced from 0.80)
+      var finalTargetSize = targetSize > maxSize ? maxSize : targetSize;
+
+      // Make mask 10% smaller
+      const double maskScale = 0.75;
+      finalTargetSize = finalTargetSize * maskScale;
 
       double maskWidth, maskHeight;
       double offsetX, offsetY;
@@ -205,9 +210,10 @@ class _PhotoPageState extends State<PhotoPage> {
         maskWidth = maskHeight * maskAspect * widthAdjustment;
       }
 
-      // Ensure minimum size - but make it smaller
-      final minPixelSizeForCheck = 300.0; // Reduced from 400
-      final minPercentageSize = smallerDimension * 0.60; // Reduced from 0.85
+      // Ensure minimum size - also reduced by 10% to allow the mask to be smaller
+      final minPixelSizeForCheck = 225.0; // Reduced by 10% from 250 (250 * 0.9)
+      final minPercentageSize =
+          smallerDimension * 0.45; // Reduced by 10% from 0.50 (0.50 * 0.9)
       final minSize =
           minPixelSizeForCheck > minPercentageSize
               ? minPixelSizeForCheck
@@ -359,7 +365,22 @@ class _PhotoPageState extends State<PhotoPage> {
                 fit: StackFit.expand,
                 children: [
                   // Camera preview - must be first in stack
-                  Positioned.fill(child: CameraPreview(_controller!)),
+                  //Positioned.fill(child: CameraPreview(_controller!)),
+                  Center(
+                    child:
+                        _controller == null
+                            ? Container()
+                            : FittedBox(
+                              fit:
+                                  BoxFit
+                                      .cover, // or BoxFit.contain depending on what you want
+                              child: SizedBox(
+                                width: _controller!.value.previewSize!.height,
+                                height: _controller!.value.previewSize!.width,
+                                child: CameraPreview(_controller!),
+                              ),
+                            ),
+                  ),
                   // Mask overlay - on top of camera preview (only if mask is loaded)
                   if (_maskImage != null)
                     Positioned.fill(
@@ -468,15 +489,19 @@ class _MaskOverlayPainter extends CustomPainter {
     // Use a fixed minimum size or a percentage, whichever is bigger
     // Made smaller as requested
     final minPixelSize =
-        350.0; // Minimum 350 pixels for a face to fit (was 420)
+        300.0; // Minimum 300 pixels for a face to fit (reduced from 350)
     final percentageSize =
-        smallerDimension * 0.70; // 70% of smaller dimension (was 0.85)
+        smallerDimension * 0.60; // 60% of smaller dimension (reduced from 0.70)
     final targetSize =
         minPixelSize > percentageSize ? minPixelSize : percentageSize;
 
     // But don't exceed the screen size
-    final maxSize = smallerDimension * 0.80; // 80% max (was 0.90)
-    final finalTargetSize = targetSize > maxSize ? maxSize : targetSize;
+    final maxSize = smallerDimension * 0.70; // 70% max (reduced from 0.80)
+    var finalTargetSize = targetSize > maxSize ? maxSize : targetSize;
+
+    // Make mask 10% smaller
+    const double maskScale = 0.75;
+    finalTargetSize = finalTargetSize * maskScale;
 
     double maskWidth, maskHeight;
     double offsetX, offsetY;
@@ -488,7 +513,7 @@ class _MaskOverlayPainter extends CustomPainter {
 
     if (characterId == 2 || characterId == 3) {
       // Santa (2) and Elf (3) - make mask less wide
-      widthAdjustment = 0.85; // Reduce width by 15%
+      widthAdjustment = 0.75; // Reduce width by 15%
     }
 
     if (maskAspect > 1.0) {
@@ -501,9 +526,10 @@ class _MaskOverlayPainter extends CustomPainter {
       maskWidth = maskHeight * maskAspect * widthAdjustment;
     }
 
-    // Ensure minimum size - but make it smaller
-    final minPixelSizeForCheck = 300.0; // Reduced from 400
-    final minPercentageSize = smallerDimension * 0.60; // Reduced from 0.85
+    // Ensure minimum size - also reduced by 10% to allow the mask to be smaller
+    final minPixelSizeForCheck = 225.0; // Reduced by 10% from 250 (250 * 0.9)
+    final minPercentageSize =
+        smallerDimension * 0.45; // Reduced by 10% from 0.50 (0.50 * 0.9)
     final minSize =
         minPixelSizeForCheck > minPercentageSize
             ? minPixelSizeForCheck

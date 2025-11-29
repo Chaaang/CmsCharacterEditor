@@ -19,11 +19,9 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      debugShowCheckedModeBanner: false,
       title: 'Character Maker',
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
+
       onGenerateRoute: (settings) {
         switch (settings.name) {
           case CharacterSelectPage.routeName:
@@ -39,7 +37,10 @@ class MyApp extends StatelessWidget {
             return MaterialPageRoute(builder: (_) => EditorPage(design: args));
           case QRPage.routeName:
             final url = settings.arguments as String;
-            return MaterialPageRoute(builder: (_) => QRPage(url: url));
+            final args = settings.arguments as CharacterDesign;
+            return MaterialPageRoute(
+              builder: (_) => QRPage(url: url, characterDesign: args),
+            );
           case '/':
           default:
             return MaterialPageRoute(builder: (_) => const NamePage());
