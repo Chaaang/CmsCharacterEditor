@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:flutter/rendering.dart';
 import 'dart:ui' as ui;
+import 'dart:async';
 import '../state/models.dart';
 import '../widgets/character_canvas.dart';
 import '../widgets/gradient_header.dart';
@@ -24,7 +25,6 @@ class _EditorPageState extends State<EditorPage> {
   double _stroke = 6.0;
   DrawStroke? _currentStroke;
   String? _selectedSticker; // Track selected sticker for placement
-  Sticker? _selectedPlacedSticker; // Track selected placed sticker for editing
   double _stickerSize = 1.0; // Default sticker size (1.0 = normal size)
 
   // Undo history
@@ -36,6 +36,143 @@ class _EditorPageState extends State<EditorPage> {
 
   // Upload state
   bool _isUploading = false;
+
+  // Bump this to force rebuilding the CharacterCanvas (clears internal caches)
+  int _canvasVersion = 0;
+
+  // Performance optimization: throttle setState during drawing
+  int _pointsSinceLastUpdate = 0;
+  static const int _updateThreshold = 3; // Update every 3 points
+
+  // Timer state
+  Timer? _timer;
+  int _remainingSeconds = 600; // 10 minutes in seconds
+  static const int _initialTimerSeconds = 600; // 10 minutes
+  static const int _extendedTimerSeconds = 300; // 5 minutes
+  static const String _password = '8833'; // Same password as QR page
+
+  @override
+  void initState() {
+    super.initState();
+    _startTimer();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (_remainingSeconds > 0) {
+        setState(() {
+          _remainingSeconds--;
+        });
+      } else {
+        _timer?.cancel();
+        _showPasswordDialog();
+      }
+    });
+  }
+
+  void _resetTimer({bool extend = false}) {
+    _remainingSeconds = extend ? _extendedTimerSeconds : _initialTimerSeconds;
+    _startTimer();
+  }
+
+  String _formatTime(int seconds) {
+    final minutes = seconds ~/ 60;
+    final secs = seconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _showPasswordDialog() async {
+    final passwordController = TextEditingController();
+
+    final result = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        String? errorMessage;
+
+        return StatefulBuilder(
+          builder:
+              (context, setDialogState) => AlertDialog(
+                title: const Text('Time\'s Up!'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Please enter password to continue:'),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: passwordController,
+                      obscureText: true,
+                      decoration: InputDecoration(
+                        labelText: 'Password',
+                        border: const OutlineInputBorder(),
+                        errorText: errorMessage,
+                      ),
+                      onSubmitted: (value) {
+                        if (value == _password) {
+                          Navigator.pop(context, true);
+                        } else {
+                          setDialogState(() {
+                            errorMessage = 'Incorrect password';
+                          });
+                          passwordController.clear();
+                        }
+                      },
+                      autofocus: true,
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text('Skip & Print QR'),
+                  ),
+                  FilledButton(
+                    onPressed: () {
+                      if (passwordController.text == _password) {
+                        Navigator.pop(context, true);
+                      } else {
+                        setDialogState(() {
+                          errorMessage = 'Incorrect password';
+                        });
+                        passwordController.clear();
+                      }
+                    },
+                    child: const Text('Submit'),
+                  ),
+                ],
+              ),
+        );
+      },
+    );
+
+    if (result == true) {
+      // Password correct - reset timer to 5 minutes
+      _resetTimer(extend: true);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Timer extended by 5 minutes'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } else {
+      // User skipped or cancelled - proceed to upload and print QR
+      await _proceedToQR();
+    }
+  }
+
+  Future<void> _proceedToQR() async {
+    // Upload the canvas first, then navigate to QR page
+    await _performUpload();
+  }
 
   final List<String> _stickerPalette = [
     '🎅',
@@ -62,35 +199,46 @@ class _EditorPageState extends State<EditorPage> {
     Color(0xFF8850C7),
   ];
 
+  // Activate eraser tool
+  void _activateEraser() {
+    setState(() {
+      _tool = ToolType.eraser;
+    });
+  }
+
   void _startDraw(Offset p) {
     if (_tool == ToolType.brush || _tool == ToolType.eraser) {
       _saveToHistory(); // Save state before starting new stroke
       setState(() {
         _currentStroke = DrawStroke(
           points: [p],
-          color:
-              _tool == ToolType.eraser
-                  ? Colors.transparent.value
-                  : _color.value,
+          color: _tool == ToolType.eraser ? Colors.white.value : _color.value,
           strokeWidth: _stroke,
           isEraser: _tool == ToolType.eraser,
         );
         widget.design.strokes.add(_currentStroke!);
       });
-    } else if (_tool == ToolType.fill) {
-      // Fill uses part taps rather than pan
     }
   }
 
   void _updateDraw(Offset p) {
     if (_currentStroke != null) {
-      setState(() {
-        _currentStroke!.points.add(p);
-      });
+      _currentStroke!.points.add(p);
+      _pointsSinceLastUpdate++;
+
+      // Throttle updates: only call setState every N points for better performance
+      if (_pointsSinceLastUpdate >= _updateThreshold) {
+        _pointsSinceLastUpdate = 0;
+        setState(() {
+          // State is already updated, just trigger rebuild
+        });
+      }
     }
   }
 
   void _endDraw() {
+    // Always update on end to ensure final state is rendered
+    _pointsSinceLastUpdate = 0;
     setState(() {
       _currentStroke = null;
     });
@@ -99,22 +247,22 @@ class _EditorPageState extends State<EditorPage> {
   void _selectSticker(String label) {
     setState(() {
       _selectedSticker = label;
-      _selectedPlacedSticker = null; // Clear any selected placed sticker
       _tool = ToolType.move; // Switch to move tool when sticker is selected
     });
   }
 
   void _selectPlacedSticker(Sticker sticker) {
     setState(() {
-      _selectedPlacedSticker = sticker;
       _selectedSticker = null; // Clear palette selection
       _tool = ToolType.move; // Ensure move tool is active
     });
   }
 
-  void _handleFill(Offset position) {
-    // Fill is handled by CharacterCanvas
-    // History is saved via onBeforeFill callback
+  // Convert sticker size value (1.0-2.0) to display value (1-10)
+  int _getStickerDisplayValue(double value) {
+    // Map: 1.0->1, 1.1->2, 1.2->3, ..., 1.9->10, 2.0->10
+    final displayValue = ((value - 1.0) * 10).round() + 1;
+    return displayValue.clamp(1, 10);
   }
 
   void _clearCanvas() {
@@ -136,7 +284,10 @@ class _EditorPageState extends State<EditorPage> {
                   setState(() {
                     widget.design.strokes.clear();
                     widget.design.stickers.clear();
+                    // Force CharacterCanvas to rebuild with a new State
+                    _canvasVersion++;
                   });
+
                   Navigator.pop(context);
                 },
                 style: FilledButton.styleFrom(backgroundColor: Colors.red),
@@ -210,55 +361,42 @@ class _EditorPageState extends State<EditorPage> {
     }
   }
 
-  // Save current state to history
+  // Save current state to history (async to avoid blocking UI)
   void _saveToHistory() {
-    // Create a snapshot of current strokes and stickers
-    final snapshot = _DesignSnapshot(
-      strokes:
-          widget.design.strokes
-              .map(
-                (s) => DrawStroke(
-                  points: List.from(s.points),
-                  color: s.color,
-                  strokeWidth: s.strokeWidth,
-                  isEraser: s.isEraser,
-                ),
-              )
-              .toList(),
-      stickers:
-          widget.design.stickers
-              .map(
-                (s) => Sticker(
-                  label: s.label,
-                  position: s.position,
-                  scale: s.scale,
-                  rotation: s.rotation,
-                ),
-              )
-              .toList(),
-    );
+    // Defer the expensive copy operation to avoid blocking the UI thread
+    Future.microtask(() {
+      if (!mounted) return;
 
-    _history.add(snapshot);
-    if (_history.length > _maxHistorySize) {
-      _history.removeAt(0); // Remove oldest
-    }
-  }
+      // Create a snapshot of current strokes and stickers
+      final snapshot = _DesignSnapshot(
+        strokes:
+            widget.design.strokes
+                .map(
+                  (s) => DrawStroke(
+                    points: List.from(s.points),
+                    color: s.color,
+                    strokeWidth: s.strokeWidth,
+                    isEraser: s.isEraser,
+                  ),
+                )
+                .toList(),
+        stickers:
+            widget.design.stickers
+                .map(
+                  (s) => Sticker(
+                    label: s.label,
+                    position: s.position,
+                    scale: s.scale,
+                    rotation: s.rotation,
+                  ),
+                )
+                .toList(),
+      );
 
-  // Undo last action
-  void _undo() {
-    if (_history.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Nothing to undo')));
-      return;
-    }
-
-    setState(() {
-      final snapshot = _history.removeLast();
-      widget.design.strokes.clear();
-      widget.design.strokes.addAll(snapshot.strokes);
-      widget.design.stickers.clear();
-      widget.design.stickers.addAll(snapshot.stickers);
+      _history.add(snapshot);
+      if (_history.length > _maxHistorySize) {
+        _history.removeAt(0); // Remove oldest
+      }
     });
   }
 
@@ -360,7 +498,15 @@ class _EditorPageState extends State<EditorPage> {
 
         if (url != null && url.isNotEmpty) {
           // Navigate to QR page with the URL
-          Navigator.of(context).pushNamed(QRPage.routeName, arguments: url);
+          //Navigator.of(context).pushNamed(QRPage.routeName, arguments: url);
+
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder:
+                  (context) => QRPage(url: url, characterDesign: widget.design),
+            ),
+          );
         } else {
           // If no URL returned, show error
           ScaffoldMessenger.of(context).showSnackBar(
@@ -408,9 +554,31 @@ class _EditorPageState extends State<EditorPage> {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             GradientHeader(text: widget.design.characterName, fontSize: 24),
+            const SizedBox(width: 16),
+            // Timer display
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color:
+                    _remainingSeconds <= 60
+                        ? Colors.red
+                        : _remainingSeconds <= 300
+                        ? Colors.orange
+                        : Colors.green,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                _formatTime(_remainingSeconds),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
             IconButton(
               icon: const Icon(Icons.upload),
-              tooltip: 'Undo',
+              tooltip: 'Upload',
               onPressed: _uploadCanvas,
               color: Colors.white,
             ),
@@ -435,8 +603,7 @@ class _EditorPageState extends State<EditorPage> {
             stroke: _stroke,
             onToolChanged: (t) => setState(() => _tool = t),
             onStrokeChanged: (v) => setState(() => _stroke = v),
-            onUndo: _undo,
-            canUndo: _history.isNotEmpty,
+            onEraserTap: _activateEraser,
             colors: _colors,
             onColorChanged: (c) => setState(() => _color = c),
             onColorPickerTap: () async {
@@ -473,36 +640,43 @@ class _EditorPageState extends State<EditorPage> {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.all(12.0),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.black12),
-                ),
-                child: RepaintBoundary(
-                  key: _canvasKey,
-                  child: CharacterCanvas(
-                    design: widget.design,
-                    onPanStart: _startDraw,
-                    onPanUpdate: _updateDraw,
-                    onPanEnd: _endDraw,
-                    faceDraggable: false, // Don't show face image for now
-                    onTap:
-                        _selectedSticker != null
-                            ? _placeStickerAt
-                            : (_tool == ToolType.fill ? _handleFill : null),
-                    fillColor: _tool == ToolType.fill ? _color : null,
-                    onBeforeFill:
-                        _tool == ToolType.fill ? _saveToHistory : null,
-                    onAfterFill:
-                        _tool == ToolType.fill ? () => setState(() {}) : null,
-                    onStickerTap:
-                        _tool == ToolType.move ? _selectPlacedSticker : null,
-                    onTapPart: (partKey) {
-                      // Part tapping for other tools
-                    },
-                  ),
-                ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // On tablets, use transparent background since CharacterCanvas draws its own
+                  final canvasArea =
+                      constraints.maxWidth * constraints.maxHeight;
+                  final isTablet = canvasArea > 500000;
+
+                  return DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: isTablet ? Colors.transparent : Colors.black,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isTablet ? Colors.transparent : Colors.black12,
+                      ),
+                    ),
+                    child: RepaintBoundary(
+                      key: _canvasKey,
+                      child: CharacterCanvas(
+                        key: ValueKey(_canvasVersion),
+                        design: widget.design,
+                        onPanStart: _startDraw,
+                        onPanUpdate: _updateDraw,
+                        onPanEnd: _endDraw,
+                        faceDraggable: false, // Don't show face image for now
+                        onTap:
+                            _selectedSticker != null ? _placeStickerAt : null,
+                        onStickerTap:
+                            _tool == ToolType.move
+                                ? _selectPlacedSticker
+                                : null,
+                        onTapPart: (partKey) {
+                          // Part tapping for other tools
+                        },
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),
@@ -597,7 +771,7 @@ class _EditorPageState extends State<EditorPage> {
                             ),
                           ),
                           Text(
-                            _stickerSize.toStringAsFixed(0),
+                            _getStickerDisplayValue(_stickerSize).toString(),
                             style: TextStyle(
                               fontSize: 25,
                               fontWeight: FontWeight.bold,
@@ -609,15 +783,15 @@ class _EditorPageState extends State<EditorPage> {
                       Row(
                         children: [
                           const Text(
-                            'Small',
+                            '1',
                             style: TextStyle(fontSize: 21, color: Colors.grey),
                           ),
                           Expanded(
                             child: Slider(
                               value: _stickerSize,
-                              min: 0.5,
-                              max: 3.0,
-                              divisions: 25,
+                              min: 1.0,
+                              max: 2.0,
+                              divisions: 10,
                               activeColor: Colors.purple,
                               inactiveColor: Colors.pink.shade200,
                               onChanged: (value) {
@@ -628,7 +802,7 @@ class _EditorPageState extends State<EditorPage> {
                             ),
                           ),
                           const Text(
-                            'Large',
+                            '10',
                             style: TextStyle(fontSize: 21, color: Colors.grey),
                           ),
                         ],
@@ -693,8 +867,7 @@ class _ToolBar extends StatelessWidget {
     required this.stroke,
     required this.onToolChanged,
     required this.onStrokeChanged,
-    required this.onUndo,
-    required this.canUndo,
+    required this.onEraserTap,
     required this.colors,
     required this.onColorChanged,
     required this.onColorPickerTap,
@@ -705,8 +878,7 @@ class _ToolBar extends StatelessWidget {
   final double stroke;
   final ValueChanged<ToolType> onToolChanged;
   final ValueChanged<double> onStrokeChanged;
-  final VoidCallback onUndo;
-  final bool canUndo;
+  final VoidCallback onEraserTap;
   final List<Color> colors;
   final ValueChanged<Color> onColorChanged;
   final VoidCallback onColorPickerTap;
@@ -725,30 +897,10 @@ class _ToolBar extends StatelessWidget {
           ),
           const SizedBox(width: 8),
           _ToolButton(
-            icon: Icons.format_color_fill,
-            selected: tool == ToolType.fill,
-            tooltip: 'Fill',
-            onTap: () => onToolChanged(ToolType.fill),
-          ),
-          const SizedBox(width: 8),
-          Tooltip(
-            message: 'Undo',
-            child: InkResponse(
-              onTap: canUndo ? onUndo : null,
-              radius: 24,
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.black12),
-                ),
-                child: Icon(
-                  size: 40,
-                  Icons.undo,
-                  color: canUndo ? Colors.white : Colors.grey,
-                ),
-              ),
-            ),
+            icon: Icons.auto_fix_off,
+            selected: tool == ToolType.eraser,
+            tooltip: 'Eraser',
+            onTap: onEraserTap,
           ),
           const Spacer(),
           // Color Picker Button
