@@ -164,7 +164,7 @@ class _CharacterCard extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               FilledButton.tonal(
-                onPressed: () {},
+                onPressed: onTap,
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                 ),

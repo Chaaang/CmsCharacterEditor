@@ -7,44 +7,59 @@ import 'package:http/http.dart' as http;
 class Api {
   static const String baseUrl = 'https://christmas.onecode.uk/api';
 
-  static Future<String?> saveDesign(CharacterDesign design, Uint8List bytes) async {
+  static Future<String?> saveDesign(
+    CharacterDesign design,
+    Uint8List bytes,
+  ) async {
     //final response = await http.post(Uri.parse('$baseUrl/designs'), body: design.toJson());
-  String id = '';
-  if(design.characterId == 0){
-    id = 'A';
-  }else if(design.characterId == 1){
-    id = 'B';
-  }else if(design.characterId == 2){
-    id = 'C';
-  }else if(design.characterId == 3){
-    id = 'D';
-  }
+    String id = '';
+    if (design.characterId == 0) {
+      id = 'A';
+    } else if (design.characterId == 1) {
+      id = 'B';
+    } else if (design.characterId == 2) {
+      id = 'C';
+    } else if (design.characterId == 3) {
+      id = 'D';
+    }
 
-   final base64Image = base64Encode(bytes);
-   final dataUriImage = "data:image/png;base64,$base64Image";
-    try{
-      
-            final response = await http.post(
+    final base64Image = base64Encode(bytes);
+    final dataUriImage = "data:image/png;base64,$base64Image";
+    try {
+      final response = await http.post(
         Uri.parse(baseUrl),
         body: {
           'act': 'part_1',
-          'key' : 'msCh25_Ari',
+          'key': 'msCh25_Ari',
+          'version': '2',
           'fileimage': dataUriImage,
           'selected_method': id,
           'person_name': design.userName,
         },
       );
 
-   
-           if (response.statusCode == 200) {
+      if (response.statusCode == 200) {
         final body = response.body;
-        return body;
+        print('body: $body');
+
+        // Parse JSON response and extract qr_url
+        try {
+          final jsonData = jsonDecode(body);
+          if (jsonData is Map<String, dynamic> &&
+              jsonData.containsKey('qr_url')) {
+            return jsonData['qr_url'] as String;
+          } else {
+            throw Exception('Response does not contain qr_url');
+          }
+        } catch (e) {
+          throw Exception('Failed to parse response: $e');
+        }
       } else {
         throw Exception(
           "Upload failed with status ${response.statusCode}: ${response.body}",
         );
       }
-    }catch (e){
+    } catch (e) {
       throw Exception('Error saving design: $e');
     }
   }

@@ -334,7 +334,7 @@ packages:
       path: "."
       ref: Chaaang-patch-1
       resolved-ref: "913f11a2d92bc4fdee0f917d4686be7c94cfef29"
-      url: "https://github.com/Chaaang/niimbot_label_printer.git"
+      url: "https://github.com/Chaaang/niimbot_label_printer"
     source: git
     version: "0.0.2"
   path:

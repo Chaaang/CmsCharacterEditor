@@ -1,6 +1,7 @@
 import 'package:cms/widgets/gradient_header.dart';
 import 'package:cms/widgets/my_loading.dart';
 import 'package:cms/widgets/my_message.dart';
+import 'package:cms/state/printer_state.dart';
 import 'package:flutter/material.dart';
 import 'package:niimbot_label_printer/niimbot_label_printer.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -172,6 +173,8 @@ class _NamePageState extends State<NamePage> {
                             deviceName = 'Not Connected';
                             connecting = false;
                           });
+                          // Clear connection from shared state
+                          PrinterState.clearConnection();
                         } else {
                           // If not connected, try to connect
                           LoadingDialog.show(context);
@@ -188,6 +191,11 @@ class _NamePageState extends State<NamePage> {
                               LoadingDialog.hide;
                               Navigator.of(context).pop(); // Close the dialog
                             });
+                            // Store connection in shared state
+                            PrinterState.setConnected(
+                              device.address,
+                              device.name,
+                            );
                           } else {
                             MessageUtils.showErrorMessage(
                               context,

@@ -3,8 +3,10 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:cms/state/models.dart';
+import 'package:cms/state/printer_state.dart';
 import 'package:cms/widgets/my_loading.dart';
 import 'package:cms/widgets/my_message.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:niimbot_label_printer/niimbot_label_printer.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -31,9 +33,183 @@ class _QRPageState extends State<QRPage> {
   int _labelWidth = 400; // Default: 50mm
   int _labelHeight = 240; // Default: 30mm
 
+  // Store last connected printer for auto-reconnection
+  BluetoothDevice? _lastConnectedPrinter;
+
   @override
   void initState() {
     super.initState();
+    _loadLastConnectedPrinter();
+  }
+
+  // Load the last connected printer from paired devices
+  Future<void> _loadLastConnectedPrinter() async {
+    try {
+      // Check if currently connected - if so, we can try to identify the device later
+      final bool isConnected = await _niimbotLabelPrinterPlugin.isConnected();
+      if (isConnected) {
+        // Printer is already connected, we'll try to reconnect to any available device if it disconnects
+      }
+    } catch (e) {
+      debugPrint('Error loading last connected printer: $e');
+    }
+  }
+
+  // Show printer selection dialog (similar to name_page.dart)
+  Future<bool> _showPrinterSelectionDialog() async {
+    if (kIsWeb) {
+      MessageUtils.showErrorMessage(
+        context,
+        'Printer is not available on web.',
+      );
+      return false;
+    }
+
+    try {
+      final bool permissionIsGranted =
+          await _niimbotLabelPrinterPlugin.requestPermissionGrant();
+
+      if (!permissionIsGranted) {
+        MessageUtils.showErrorMessage(
+          context,
+          'Bluetooth permission is required to connect to printer.',
+        );
+        return false;
+      }
+
+      final bool isBluetoothEnabled =
+          await _niimbotLabelPrinterPlugin.bluetoothIsEnabled();
+      if (!isBluetoothEnabled) {
+        MessageUtils.showErrorMessage(context, 'Please turn on your Bluetooth');
+        return false;
+      }
+
+      // Fetch paired devices
+      final List<BluetoothDevice> devices =
+          await _niimbotLabelPrinterPlugin.getPairedDevices();
+
+      if (devices.isEmpty) {
+        MessageUtils.showErrorMessage(
+          context,
+          'No paired devices found. Please pair a printer first.',
+        );
+        return false;
+      }
+
+      // Check current connection
+      bool isCurrentlyConnected =
+          await _niimbotLabelPrinterPlugin.isConnected();
+      String? currentMacAddress;
+
+      // First check shared state from name_page
+      if (PrinterState.connectedMacAddress != null) {
+        currentMacAddress = PrinterState.connectedMacAddress;
+        // Try to find the device in the list to update _lastConnectedPrinter
+        try {
+          final matchedDevice = devices.firstWhere(
+            (d) => d.address == PrinterState.connectedMacAddress,
+          );
+          _lastConnectedPrinter = matchedDevice;
+        } catch (e) {
+          // Device not found in list, but we have the MAC address
+        }
+      } else if (isCurrentlyConnected && _lastConnectedPrinter != null) {
+        currentMacAddress = _lastConnectedPrinter!.address;
+      }
+
+      // Show dialog
+      final bool? connected = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext context) {
+          return AlertDialog(
+            title: const Center(child: Text('Select Bluetooth Printer')),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: devices.length,
+                itemBuilder: (BuildContext context, int index) {
+                  BluetoothDevice device = devices[index];
+                  final isSelected = device.address == currentMacAddress;
+                  return ListTile(
+                    selected: isSelected,
+                    title: Text(
+                      device.name.isNotEmpty ? device.name : 'Unnamed',
+                    ),
+                    subtitle: Text(device.address),
+                    trailing:
+                        isSelected
+                            ? const Text(
+                              'Disconnect',
+                              style: TextStyle(color: Colors.red),
+                            )
+                            : const Text(
+                              'Connect',
+                              style: TextStyle(color: Colors.blue),
+                            ),
+                    onTap: () async {
+                      if (isSelected) {
+                        // Already connected - disconnect it
+                        LoadingDialog.show(context);
+                        await _niimbotLabelPrinterPlugin.disconnect();
+                        LoadingDialog.hide(context);
+
+                        setState(() {
+                          _lastConnectedPrinter = null;
+                        });
+
+                        // Clear shared state
+                        PrinterState.clearConnection();
+
+                        Navigator.of(context).pop(false);
+                        return;
+                      }
+
+                      // Try to connect
+                      LoadingDialog.show(context);
+                      bool result = await _niimbotLabelPrinterPlugin.connect(
+                        device,
+                      );
+                      LoadingDialog.hide(context);
+
+                      if (result) {
+                        _lastConnectedPrinter =
+                            device; // Store for future reference
+                        // Update shared state
+                        PrinterState.setConnected(device.address, device.name);
+                        Navigator.of(context).pop(true);
+                      } else {
+                        MessageUtils.showErrorMessage(
+                          context,
+                          'Failed to connect to printer',
+                        );
+                        Navigator.of(context).pop(false);
+                      }
+                    },
+                  );
+                },
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop(false);
+                },
+                child: const Text('Cancel'),
+              ),
+            ],
+          );
+        },
+      );
+
+      return connected ?? false;
+    } catch (e) {
+      MessageUtils.showErrorMessage(
+        context,
+        'Error showing printer selection: ${e.toString()}',
+      );
+      return false;
+    }
   }
 
   Future<void> _showPasswordDialog() async {
@@ -316,13 +492,33 @@ class _QRPageState extends State<QRPage> {
   }
 
   Future<void> _printQRCode() async {
+    if (kIsWeb) {
+      MessageUtils.showErrorMessage(
+        context,
+        'Printer is not available on web.',
+      );
+      return;
+    }
+
     try {
       // Check if printer is connected
-      final bool isConnected = await _niimbotLabelPrinterPlugin.isConnected();
+      bool isConnected = await _niimbotLabelPrinterPlugin.isConnected();
 
+      // If not connected, show printer selection dialog
       if (!isConnected) {
-        MessageUtils.showErrorMessage(context, 'Printer not connected.');
-        return;
+        final connected = await _showPrinterSelectionDialog();
+        if (!connected) {
+          return; // User cancelled or connection failed
+        }
+        // Verify connection after selection
+        isConnected = await _niimbotLabelPrinterPlugin.isConnected();
+        if (!isConnected) {
+          MessageUtils.showErrorMessage(
+            context,
+            'Failed to connect to printer. Please try again.',
+          );
+          return;
+        }
       }
 
       // Show loading dialog
@@ -375,21 +571,45 @@ class _QRPageState extends State<QRPage> {
       PrintData printData = PrintData.fromMap(datosImagen);
 
       // Send to printer with timeout
-      await _niimbotLabelPrinterPlugin
+      var result = await _niimbotLabelPrinterPlugin
           .send(printData)
           .timeout(const Duration(seconds: 10));
 
+      if (result == false) {
+        print('Printing failed.');
+      } else {
+        print('Printing successful.');
+      }
+
       // Verify connection after printing
-      final bool checkConnection =
-          await _niimbotLabelPrinterPlugin.isConnected();
+      bool checkConnection = await _niimbotLabelPrinterPlugin.isConnected();
 
       LoadingDialog.hide(context);
 
       if (!checkConnection) {
-        MessageUtils.showErrorMessage(
-          context,
-          'Printer disconnected. Please reconnect.',
+        // Printer disconnected, show printer selection dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Printer disconnected. Please reconnect to continue.',
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
         );
+        final reconnected = await _showPrinterSelectionDialog();
+
+        if (reconnected) {
+          MessageUtils.showSuccessMessage(
+            context,
+            'QR Code printed successfully! (Reconnected to printer)',
+          );
+        } else {
+          MessageUtils.showErrorMessage(
+            context,
+            'QR Code printed but printer disconnected. Please reconnect to print again.',
+          );
+        }
       } else {
         MessageUtils.showSuccessMessage(
           context,
@@ -398,10 +618,38 @@ class _QRPageState extends State<QRPage> {
       }
     } catch (e) {
       LoadingDialog.hide(context);
-      MessageUtils.showErrorMessage(
-        context,
-        'Printing failed: ${e.toString()}',
-      );
+
+      // Check if error is due to disconnection, show printer selection dialog
+      final bool isConnected = await _niimbotLabelPrinterPlugin.isConnected();
+      if (!isConnected) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Printing failed. Printer disconnected. Please reconnect.',
+            ),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+        final reconnected = await _showPrinterSelectionDialog();
+
+        if (reconnected) {
+          MessageUtils.showErrorMessage(
+            context,
+            'Printing failed but printer reconnected. Please try printing again.',
+          );
+        } else {
+          MessageUtils.showErrorMessage(
+            context,
+            'Printing failed: ${e.toString()}. Please reconnect to printer.',
+          );
+        }
+      } else {
+        MessageUtils.showErrorMessage(
+          context,
+          'Printing failed: ${e.toString()}',
+        );
+      }
     }
   }
 
@@ -549,120 +797,174 @@ class _QRPageState extends State<QRPage> {
     return completer.future;
   }
 
+  Future<bool> _onWillPop() async {
+    // Show exit confirmation dialog
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: const Text('Exit?'),
+            content: const Text('Are you sure you want to exit?'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                child: const Text('Exit'),
+              ),
+            ],
+          ),
+    );
+
+    return shouldExit ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFF5522A3),
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const SizedBox(height: 20),
-            const GradientHeader(text: 'Your Design is Ready!', fontSize: 30),
-            const SizedBox(height: 8),
-            const Center(
-              child: Text(
-                'Scan the QR code to view your creation',
-                style: TextStyle(color: Colors.white70, fontSize: 16),
-              ),
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (didPop) async {
+        if (!didPop) {
+          final shouldExit = await _onWillPop();
+          if (shouldExit && mounted) {
+            Navigator.of(context).pop();
+          }
+        }
+      },
+      child: Scaffold(
+        backgroundColor: const Color(0xFF5522A3),
+        appBar: AppBar(
+          backgroundColor: const Color(0xFF5522A3),
+          actions: [
+            IconButton(
+              onPressed: () async {
+                if (kIsWeb) {
+                  MessageUtils.showErrorMessage(
+                    context,
+                    'Printer is not available on web.',
+                  );
+                  return;
+                }
+                await _showPrinterSelectionDialog();
+              },
+              icon: const Icon(Icons.print_outlined, color: Colors.white),
             ),
-            const SizedBox(height: 40),
-            Expanded(
-              child: Center(
-                child: SingleChildScrollView(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(24),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(24),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
-                                blurRadius: 20,
-                                offset: const Offset(0, 10),
+          ],
+        ),
+        body: SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SizedBox(height: 20),
+              const GradientHeader(text: 'Your Design is Ready!', fontSize: 30),
+              const SizedBox(height: 8),
+              const Center(
+                child: Text(
+                  'Scan the QR code to view your creation',
+                  style: TextStyle(color: Colors.white70, fontSize: 16),
+                ),
+              ),
+              const SizedBox(height: 40),
+              Expanded(
+                child: Center(
+                  child: SingleChildScrollView(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(24),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(24),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.2),
+                                  blurRadius: 20,
+                                  offset: const Offset(0, 10),
+                                ),
+                              ],
+                            ),
+                            child: QrImageView(
+                              data: widget.url,
+                              version: QrVersions.auto,
+                              size: 280.0,
+                              backgroundColor: Colors.white,
+                              errorCorrectionLevel: QrErrorCorrectLevel.M,
+                            ),
+                          ),
+                          const SizedBox(height: 32),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 16,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: SelectableText(
+                              widget.url,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                          const SizedBox(height: 32),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              ElevatedButton.icon(
+                                onPressed: _printQRCode,
+                                icon: const Icon(Icons.print),
+                                label: const Text('Print QR Code'),
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 32,
+                                    vertical: 16,
+                                  ),
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: const Color(0xFF5522A3),
+                                  textStyle: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              ElevatedButton.icon(
+                                onPressed: _showPasswordDialog,
+                                icon: const Icon(Icons.home),
+                                label: const Text('Back to Home'),
+                                style: ElevatedButton.styleFrom(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 32,
+                                    vertical: 16,
+                                  ),
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: const Color(0xFF5522A3),
+                                  textStyle: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
                               ),
                             ],
                           ),
-                          child: QrImageView(
-                            data: widget.url,
-                            version: QrVersions.auto,
-                            size: 280.0,
-                            backgroundColor: Colors.white,
-                            errorCorrectionLevel: QrErrorCorrectLevel.M,
-                          ),
-                        ),
-                        const SizedBox(height: 32),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 24,
-                            vertical: 16,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: SelectableText(
-                            widget.url,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                        const SizedBox(height: 32),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            ElevatedButton.icon(
-                              onPressed: _printQRCode,
-                              icon: const Icon(Icons.print),
-                              label: const Text('Print QR Code'),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 32,
-                                  vertical: 16,
-                                ),
-                                backgroundColor: Colors.white,
-                                foregroundColor: const Color(0xFF5522A3),
-                                textStyle: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            ElevatedButton.icon(
-                              onPressed: _showPasswordDialog,
-                              icon: const Icon(Icons.home),
-                              label: const Text('Back to Home'),
-                              style: ElevatedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 32,
-                                  vertical: 16,
-                                ),
-                                backgroundColor: Colors.white,
-                                foregroundColor: const Color(0xFF5522A3),
-                                textStyle: const TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
