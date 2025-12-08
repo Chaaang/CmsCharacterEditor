@@ -9,6 +9,7 @@ import 'package:cms/widgets/my_message.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:niimbot_label_printer/niimbot_label_printer.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import '../widgets/gradient_header.dart';
 
@@ -30,186 +31,308 @@ class _QRPageState extends State<QRPage> {
   final NiimbotLabelPrinter _niimbotLabelPrinterPlugin = NiimbotLabelPrinter();
 
   // Label dimensions (in pixels, assuming 8 pixels per mm)
-  int _labelWidth = 400; // Default: 50mm
-  int _labelHeight = 240; // Default: 30mm
 
-  // Store last connected printer for auto-reconnection
-  BluetoothDevice? _lastConnectedPrinter;
+  List<BluetoothDevice> _devices = [];
+  String macConnection = '';
+  String deviceName = '';
+  bool connecting = false;
 
   @override
   void initState() {
     super.initState();
-    _loadLastConnectedPrinter();
+    //_loadLastConnectedPrinter();
   }
 
   // Load the last connected printer from paired devices
-  Future<void> _loadLastConnectedPrinter() async {
-    try {
-      // Check if currently connected - if so, we can try to identify the device later
-      final bool isConnected = await _niimbotLabelPrinterPlugin.isConnected();
-      if (isConnected) {
-        // Printer is already connected, we'll try to reconnect to any available device if it disconnects
-      }
-    } catch (e) {
-      debugPrint('Error loading last connected printer: $e');
-    }
-  }
+  // Future<void> _loadLastConnectedPrinter() async {
+  //   try {
+  //     // Check if currently connected - if so, we can try to identify the device later
+  //     final bool isConnected = await _niimbotLabelPrinterPlugin.isConnected();
+  //     if (isConnected) {
+  //       // Printer is already connected, we'll try to reconnect to any available device if it disconnects
+  //     }
+  //   } catch (e) {
+  //     debugPrint('Error loading last connected printer: $e');
+  //   }
+  // }
 
   // Show printer selection dialog (similar to name_page.dart)
-  Future<bool> _showPrinterSelectionDialog() async {
-    if (kIsWeb) {
+  // Future<bool> _showPrinterSelectionDialog() async {
+  //   try {
+  //     final bool permissionIsGranted =
+  //         await _niimbotLabelPrinterPlugin.requestPermissionGrant();
+
+  //     if (!permissionIsGranted) {
+  //       MessageUtils.showErrorMessage(
+  //         context,
+  //         'Bluetooth permission is required to connect to printer.',
+  //       );
+  //       return false;
+  //     }
+
+  //     final bool isBluetoothEnabled =
+  //         await _niimbotLabelPrinterPlugin.bluetoothIsEnabled();
+  //     if (!isBluetoothEnabled) {
+  //       MessageUtils.showErrorMessage(context, 'Please turn on your Bluetooth');
+  //       return false;
+  //     }
+
+  //     // Fetch paired devices
+  //     final List<BluetoothDevice> devices =
+  //         await _niimbotLabelPrinterPlugin.getPairedDevices();
+
+  //     if (devices.isEmpty) {
+  //       MessageUtils.showErrorMessage(
+  //         context,
+  //         'No paired devices found. Please pair a printer first.',
+  //       );
+  //       return false;
+  //     }
+
+  //     // Check current connection
+  //     bool isCurrentlyConnected =
+  //         await _niimbotLabelPrinterPlugin.isConnected();
+  //     String? currentMacAddress;
+
+  //     // First check shared state from name_page
+  //     if (PrinterState.connectedMacAddress != null) {
+  //       currentMacAddress = PrinterState.connectedMacAddress;
+  //       // Try to find the device in the list to update _lastConnectedPrinter
+  //       try {
+  //         final matchedDevice = devices.firstWhere(
+  //           (d) => d.address == PrinterState.connectedMacAddress,
+  //         );
+  //         _lastConnectedPrinter = matchedDevice;
+  //       } catch (e) {
+  //         // Device not found in list, but we have the MAC address
+  //       }
+  //     } else if (isCurrentlyConnected && _lastConnectedPrinter != null) {
+  //       currentMacAddress = _lastConnectedPrinter!.address;
+  //     }
+
+  //     // Show dialog
+  //     final bool? connected = await showDialog<bool>(
+  //       context: context,
+  //       builder: (BuildContext context) {
+  //         return AlertDialog(
+  //           title: const Center(child: Text('Select Bluetooth Printer')),
+  //           content: SizedBox(
+  //             width: double.maxFinite,
+  //             child: ListView.builder(
+  //               shrinkWrap: true,
+  //               itemCount: devices.length,
+  //               itemBuilder: (BuildContext context, int index) {
+  //                 BluetoothDevice device = devices[index];
+  //                 final isSelected = device.address == currentMacAddress;
+  //                 return ListTile(
+  //                   selected: isSelected,
+  //                   title: Text(
+  //                     device.name.isNotEmpty ? device.name : 'Unnamed',
+  //                   ),
+  //                   subtitle: Text(device.address),
+  //                   trailing:
+  //                       isSelected
+  //                           ? const Text(
+  //                             'Disconnect',
+  //                             style: TextStyle(color: Colors.red),
+  //                           )
+  //                           : const Text(
+  //                             'Connect',
+  //                             style: TextStyle(color: Colors.blue),
+  //                           ),
+  //                   onTap: () async {
+  //                     if (isSelected) {
+  //                       // Already connected - disconnect it
+  //                       LoadingDialog.show(context);
+  //                       await _niimbotLabelPrinterPlugin.disconnect();
+  //                       LoadingDialog.hide(context);
+
+  //                       setState(() {
+  //                         _lastConnectedPrinter = null;
+  //                       });
+
+  //                       // Clear shared state
+  //                       PrinterState.clearConnection();
+
+  //                       Navigator.of(context).pop(false);
+  //                       return;
+  //                     }
+
+  //                     // Try to connect
+  //                     LoadingDialog.show(context);
+  //                     bool result = await _niimbotLabelPrinterPlugin.connect(
+  //                       device,
+  //                     );
+  //                     LoadingDialog.hide(context);
+
+  //                     if (result) {
+  //                       _lastConnectedPrinter =
+  //                           device; // Store for future reference
+  //                       // Update shared state
+  //                       PrinterState.setConnected(device.address, device.name);
+  //                       Navigator.of(context).pop(true);
+  //                     } else {
+  //                       MessageUtils.showErrorMessage(
+  //                         context,
+  //                         'Failed to connect to printer',
+  //                       );
+  //                       Navigator.of(context).pop(false);
+  //                     }
+  //                   },
+  //                 );
+  //               },
+  //             ),
+  //           ),
+  //           actions: [
+  //             TextButton(
+  //               onPressed: () {
+  //                 Navigator.of(context).pop(false);
+  //               },
+  //               child: const Text('Cancel'),
+  //             ),
+  //           ],
+  //         );
+  //       },
+  //     );
+
+  //     return connected ?? false;
+  //   } catch (e) {
+  //     MessageUtils.showErrorMessage(
+  //       context,
+  //       'Error showing printer selection: ${e.toString()}',
+  //     );
+  //     return false;
+  //   }
+  // }
+
+  Future<bool> selectPrinter() async {
+    final bool permissionIsGranted =
+        await _niimbotLabelPrinterPlugin.requestPermissionGrant();
+
+    if (!permissionIsGranted) {
       MessageUtils.showErrorMessage(
         context,
-        'Printer is not available on web.',
+        'Bluetooth permission is required to connect to printer.',
       );
       return false;
     }
 
-    try {
-      final bool permissionIsGranted =
-          await _niimbotLabelPrinterPlugin.requestPermissionGrant();
+    final bool isBluetoothEnabled =
+        await _niimbotLabelPrinterPlugin.bluetoothIsEnabled();
+    if (!isBluetoothEnabled) {
+      MessageUtils.showErrorMessage(context, 'Please Turn on your Bluetooth');
+      return false;
+    }
 
-      if (!permissionIsGranted) {
-        MessageUtils.showErrorMessage(
-          context,
-          'Bluetooth permission is required to connect to printer.',
-        );
-        return false;
-      }
+    // Fetch paired devices
+    final List<BluetoothDevice> result =
+        await _niimbotLabelPrinterPlugin.getPairedDevices();
+    _devices = result;
 
-      final bool isBluetoothEnabled =
-          await _niimbotLabelPrinterPlugin.bluetoothIsEnabled();
-      if (!isBluetoothEnabled) {
-        MessageUtils.showErrorMessage(context, 'Please turn on your Bluetooth');
-        return false;
-      }
+    if (_devices.isEmpty) {
+      MessageUtils.showErrorMessage(
+        context,
+        'No paired devices found. Please pair a printer first.',
+      );
+      return false;
+    }
 
-      // Fetch paired devices
-      final List<BluetoothDevice> devices =
-          await _niimbotLabelPrinterPlugin.getPairedDevices();
+    // Show dialog and wait for result
+    final bool? connected = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Center(child: Text('Select Bluetooth Printer')),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: _devices.length,
+              itemBuilder: (BuildContext context, int index) {
+                BluetoothDevice device = _devices[index];
+                return ListTile(
+                  selected: device.address == macConnection,
+                  title: Text(device.name.isNotEmpty ? device.name : 'Unnamed'),
+                  subtitle: Text(device.address),
+                  trailing:
+                      macConnection != device.address
+                          ? const Text(
+                            'Connect',
+                            style: TextStyle(color: Colors.blue),
+                          )
+                          : const Text(
+                            'Disconnect',
+                            style: TextStyle(color: Colors.blue),
+                          ),
+                  onTap: () async {
+                    setState(() {
+                      connecting = true;
+                    });
 
-      if (devices.isEmpty) {
-        MessageUtils.showErrorMessage(
-          context,
-          'No paired devices found. Please pair a printer first.',
-        );
-        return false;
-      }
+                    // Check if already connected
+                    if (macConnection == device.address) {
+                      // If already connected, try to disconnect
+                      await _niimbotLabelPrinterPlugin.disconnect();
+                      setState(() {
+                        macConnection =
+                            ""; // Clear macConnection when disconnected
+                        deviceName = 'Not Connected';
+                        connecting = false;
+                      });
+                      // Clear connection from shared state
+                      PrinterState.clearConnection();
+                      Navigator.of(
+                        context,
+                      ).pop(false); // Return false (disconnected)
+                      return;
+                    }
 
-      // Check current connection
-      bool isCurrentlyConnected =
-          await _niimbotLabelPrinterPlugin.isConnected();
-      String? currentMacAddress;
+                    // If not connected, try to connect
+                    LoadingDialog.show(context);
+                    bool result = await _niimbotLabelPrinterPlugin.connect(
+                      device,
+                    );
+                    LoadingDialog.hide(context);
 
-      // First check shared state from name_page
-      if (PrinterState.connectedMacAddress != null) {
-        currentMacAddress = PrinterState.connectedMacAddress;
-        // Try to find the device in the list to update _lastConnectedPrinter
-        try {
-          final matchedDevice = devices.firstWhere(
-            (d) => d.address == PrinterState.connectedMacAddress,
-          );
-          _lastConnectedPrinter = matchedDevice;
-        } catch (e) {
-          // Device not found in list, but we have the MAC address
-        }
-      } else if (isCurrentlyConnected && _lastConnectedPrinter != null) {
-        currentMacAddress = _lastConnectedPrinter!.address;
-      }
-
-      // Show dialog
-      final bool? connected = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext context) {
-          return AlertDialog(
-            title: const Center(child: Text('Select Bluetooth Printer')),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: ListView.builder(
-                shrinkWrap: true,
-                itemCount: devices.length,
-                itemBuilder: (BuildContext context, int index) {
-                  BluetoothDevice device = devices[index];
-                  final isSelected = device.address == currentMacAddress;
-                  return ListTile(
-                    selected: isSelected,
-                    title: Text(
-                      device.name.isNotEmpty ? device.name : 'Unnamed',
-                    ),
-                    subtitle: Text(device.address),
-                    trailing:
-                        isSelected
-                            ? const Text(
-                              'Disconnect',
-                              style: TextStyle(color: Colors.red),
-                            )
-                            : const Text(
-                              'Connect',
-                              style: TextStyle(color: Colors.blue),
-                            ),
-                    onTap: () async {
-                      if (isSelected) {
-                        // Already connected - disconnect it
-                        LoadingDialog.show(context);
-                        await _niimbotLabelPrinterPlugin.disconnect();
-                        LoadingDialog.hide(context);
-
-                        setState(() {
-                          _lastConnectedPrinter = null;
-                        });
-
-                        // Clear shared state
-                        PrinterState.clearConnection();
-
-                        Navigator.of(context).pop(false);
-                        return;
-                      }
-
-                      // Try to connect
-                      LoadingDialog.show(context);
-                      bool result = await _niimbotLabelPrinterPlugin.connect(
-                        device,
+                    if (result) {
+                      setState(() {
+                        macConnection =
+                            device.address; // Set macConnection on success
+                        deviceName = device.name;
+                        connecting = false;
+                      });
+                      // Store connection in shared state
+                      PrinterState.setConnected(device.address, device.name);
+                      Navigator.of(
+                        context,
+                      ).pop(true); // Return true (connected)
+                    } else {
+                      MessageUtils.showErrorMessage(
+                        context,
+                        'Error Connecting',
                       );
-                      LoadingDialog.hide(context);
-
-                      if (result) {
-                        _lastConnectedPrinter =
-                            device; // Store for future reference
-                        // Update shared state
-                        PrinterState.setConnected(device.address, device.name);
-                        Navigator.of(context).pop(true);
-                      } else {
-                        MessageUtils.showErrorMessage(
-                          context,
-                          'Failed to connect to printer',
-                        );
-                        Navigator.of(context).pop(false);
-                      }
-                    },
-                  );
-                },
-              ),
+                      Navigator.of(
+                        context,
+                      ).pop(false); // Return false (connection failed)
+                    }
+                  },
+                );
+              },
             ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  Navigator.of(context).pop(false);
-                },
-                child: const Text('Cancel'),
-              ),
-            ],
-          );
-        },
-      );
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop(false); // Return false (cancelled)
+              },
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
 
-      return connected ?? false;
-    } catch (e) {
-      MessageUtils.showErrorMessage(
-        context,
-        'Error showing printer selection: ${e.toString()}',
-      );
-      return false;
-    }
+    return connected ?? false;
   }
 
   Future<void> _showPasswordDialog() async {
@@ -307,190 +430,6 @@ class _QRPageState extends State<QRPage> {
     }
   }
 
-  Future<void> _showLabelSizeDialog() async {
-    // Predefined label sizes (width x height in mm)
-    final predefinedSizes = [
-      {'label': '50 x 30', 'width': 50, 'height': 30},
-      {'label': '60 x 30', 'width': 60, 'height': 30},
-      {'label': '60 x 40', 'width': 60, 'height': 40},
-      {'label': '40 x 30', 'width': 40, 'height': 30},
-      {'label': '40 x 80', 'width': 40, 'height': 80},
-      {'label': 'Custom', 'width': 0, 'height': 0}, // Custom option
-    ];
-
-    final widthController = TextEditingController(
-      text: (_labelWidth ~/ 8).toString(),
-    );
-    final heightController = TextEditingController(
-      text: (_labelHeight ~/ 8).toString(),
-    );
-    final pixelsPerMmController = TextEditingController(text: '8');
-    String? selectedSize;
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (context) {
-        String? errorMessage;
-
-        return StatefulBuilder(
-          builder:
-              (context, setDialogState) => AlertDialog(
-                title: const Text('Enter Paper Size'),
-                content: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        'Select a predefined size or enter custom dimensions:',
-                        style: TextStyle(fontSize: 14),
-                      ),
-                      const SizedBox(height: 16),
-                      DropdownButtonFormField<String>(
-                        value: selectedSize,
-                        decoration: const InputDecoration(
-                          labelText: 'Predefined Sizes',
-                          border: OutlineInputBorder(),
-                        ),
-                        items:
-                            predefinedSizes.map((size) {
-                              return DropdownMenuItem<String>(
-                                value: size['label'] as String,
-                                child: Text(size['label'] as String),
-                              );
-                            }).toList(),
-                        onChanged: (value) {
-                          setDialogState(() {
-                            selectedSize = value;
-                            if (value != 'Custom') {
-                              final selected = predefinedSizes.firstWhere(
-                                (s) => s['label'] == value,
-                              );
-                              widthController.text =
-                                  (selected['width'] as int).toString();
-                              heightController.text =
-                                  (selected['height'] as int).toString();
-                              errorMessage = null;
-                            }
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      TextField(
-                        controller: widthController,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Width (mm)',
-                          border: OutlineInputBorder(),
-                          hintText: '50',
-                        ),
-                        onChanged: (value) {
-                          setDialogState(() {
-                            selectedSize = 'Custom';
-                            errorMessage = null;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: heightController,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Height (mm)',
-                          border: OutlineInputBorder(),
-                          hintText: '30',
-                        ),
-                        onChanged: (value) {
-                          setDialogState(() {
-                            selectedSize = 'Custom';
-                            errorMessage = null;
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 12),
-                      // TextField(
-                      //   controller: pixelsPerMmController,
-                      //   keyboardType: TextInputType.number,
-                      //   decoration: const InputDecoration(
-                      //     labelText: 'Pixels per mm',
-                      //     border: OutlineInputBorder(),
-                      //     hintText: '8',
-                      //     helperText: 'Usually 8 pixels per mm',
-                      //   ),
-                      // ),
-                      if (errorMessage != null)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8),
-                          child: Text(
-                            errorMessage!,
-                            style: const TextStyle(
-                              color: Colors.red,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('Cancel'),
-                  ),
-                  FilledButton(
-                    onPressed: () {
-                      final width = int.tryParse(widthController.text);
-                      final height = int.tryParse(heightController.text);
-                      final pixelsPerMm = int.tryParse(
-                        pixelsPerMmController.text,
-                      );
-
-                      if (width == null || width <= 0) {
-                        setDialogState(() {
-                          errorMessage = 'Please enter a valid width';
-                        });
-                        return;
-                      }
-
-                      if (height == null || height <= 0) {
-                        setDialogState(() {
-                          errorMessage = 'Please enter a valid height';
-                        });
-                        return;
-                      }
-
-                      if (pixelsPerMm == null || pixelsPerMm <= 0) {
-                        setDialogState(() {
-                          errorMessage = 'Please enter valid pixels per mm';
-                        });
-                        return;
-                      }
-
-                      Navigator.pop(context, true);
-                    },
-                    child: const Text('Continue'),
-                  ),
-                ],
-              ),
-        );
-      },
-    );
-
-    if (result == true) {
-      final width = int.tryParse(widthController.text);
-      final height = int.tryParse(heightController.text);
-      final pixelsPerMm = int.tryParse(pixelsPerMmController.text);
-
-      if (width != null && height != null && pixelsPerMm != null) {
-        setState(() {
-          _labelWidth = width * pixelsPerMm;
-          _labelHeight = height * pixelsPerMm;
-        });
-        // Proceed with printing
-        await _printQRCode();
-      }
-    }
-  }
-
   Future<void> _printQRCode() async {
     if (kIsWeb) {
       MessageUtils.showErrorMessage(
@@ -506,7 +445,7 @@ class _QRPageState extends State<QRPage> {
 
       // If not connected, show printer selection dialog
       if (!isConnected) {
-        final connected = await _showPrinterSelectionDialog();
+        final connected = await selectPrinter();
         if (!connected) {
           return; // User cancelled or connection failed
         }
@@ -597,7 +536,7 @@ class _QRPageState extends State<QRPage> {
             duration: Duration(seconds: 2),
           ),
         );
-        final reconnected = await _showPrinterSelectionDialog();
+        final reconnected = await selectPrinter();
 
         if (reconnected) {
           MessageUtils.showSuccessMessage(
@@ -631,7 +570,7 @@ class _QRPageState extends State<QRPage> {
             duration: Duration(seconds: 2),
           ),
         );
-        final reconnected = await _showPrinterSelectionDialog();
+        final reconnected = await selectPrinter();
 
         if (reconnected) {
           MessageUtils.showErrorMessage(
@@ -822,6 +761,58 @@ class _QRPageState extends State<QRPage> {
     return shouldExit ?? false;
   }
 
+  Future<bool> requestNearbyDevicesPermission(BuildContext context) async {
+    var scanStatus = await Permission.bluetoothScan.status;
+    var connectStatus = await Permission.bluetoothConnect.status;
+
+    // Already granted
+    if (scanStatus.isGranted && connectStatus.isGranted) {
+      return true;
+    }
+
+    // Permanently denied → go to settings
+    if (scanStatus.isPermanentlyDenied || connectStatus.isPermanentlyDenied) {
+      await openAppSettings();
+      return false;
+    }
+
+    // Show explanation dialog first
+    bool proceed = await showPermissionExplanationDialog(context);
+    if (!proceed) return false;
+
+    // Request permissions
+    scanStatus = await Permission.bluetoothScan.request();
+    connectStatus = await Permission.bluetoothConnect.request();
+
+    // Return true only if both granted
+    return scanStatus.isGranted && connectStatus.isGranted;
+  }
+
+  Future<bool> showPermissionExplanationDialog(BuildContext context) async {
+    return await showDialog<bool>(
+          context: context,
+          builder:
+              (context) => AlertDialog(
+                title: const Text("Bluetooth Permission Needed"),
+                content: const Text(
+                  "This app needs Bluetooth access to connect and print to your device. "
+                  "Please allow the permission when prompted.",
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, false),
+                    child: const Text("Cancel"),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context, true),
+                    child: const Text("Continue"),
+                  ),
+                ],
+              ),
+        ) ??
+        false;
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -841,14 +832,10 @@ class _QRPageState extends State<QRPage> {
           actions: [
             IconButton(
               onPressed: () async {
-                if (kIsWeb) {
-                  MessageUtils.showErrorMessage(
-                    context,
-                    'Printer is not available on web.',
-                  );
-                  return;
+                bool granted = await requestNearbyDevicesPermission(context);
+                if (granted) {
+                  await selectPrinter();
                 }
-                await _showPrinterSelectionDialog();
               },
               icon: const Icon(Icons.print_outlined, color: Colors.white),
             ),
